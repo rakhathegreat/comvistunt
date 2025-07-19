@@ -1,76 +1,102 @@
-from model.comvistunt import get_landmark, get_height, get_haz
+from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.responses import JSONResponse
+import shutil
+import os
 from calibration import aruco, green_mat
-from config_manager import get_config, set_config
-import argparse
-import sys
+from model.comvistunt import draw_landmarks, get_landmarks
 
+app = FastAPI()
+UPLOAD_FOLDER = 'uploads'
+landmarks = f"{UPLOAD_FOLDER}/landmark"
+calibration = f"{UPLOAD_FOLDER}/calibration"
+landmarks_result = f"{UPLOAD_FOLDER}/landmark/landmark_result"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(landmarks, exist_ok=True)
+os.makedirs(calibration, exist_ok=True)
+os.makedirs(landmarks_result, exist_ok=True)
 
-def analyze(image_path: str, gender: str, age: int):
-    # Deteksi landmark
-    lms = get_landmark(image_path)
-    if not lms:
-        print("Gagal mendeteksi pose dari gambar.")
-        return 1
+@app.get("/")
+async def root():
+    return {
+            "message": "Hello World",
+            "status": 200
 
-    # Ambil nilai konversi dari konfigurasi
-    cm_per_px = get_config("CM_PER_PX")
-    if not cm_per_px:
-        print("Kalibrasi belum dilakukan. Jalankan dengan --calibrate terlebih dahulu.")
-        return 1
+            }
 
-    # Hitung tinggi dan HAZ
-    height_cm = get_height(lms, cm_per_px)
-    haz_score, haz_status = get_haz(height_cm, gender, age)
+@app.get("/ping")
+async def ping():
+    return JSONResponse(content={"message": "pong"}, status_code=200)
 
-    # Tampilkan hasil
-    print(f"Height: {height_cm:.2f} cm")
-    print(f"HAZ: {haz_score:.2f} ({haz_status})")
+@app.get("/landmark")
+async def landmark():
+    return JSONResponse(content={"message": "pong"}, status_code=200)
 
-    return 0
+@app.post("/calibrate/aruco")
+async def calibrate(image: UploadFile = File(...)):
+    try:
+        image.filename = "aruco.png"
+        file_path = os.path.join(calibration, image.filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+        
+        result, file_path = aruco(file_path)
 
+        if result is None:
+            return JSONResponse(status_code=404, content={"status": "failed", "message": "Calibration Failed."})
+        
+        return {
+            "status": "success",
+            "message": "Calibration Success.",
+            "result": result,
+            "file_path": file_path
+        }
+        
+    except Exception as e:
+        return JSONResponse(content={"message": str(e)}, status_code=500)
+    
 
-def calibration(image_path: str, method: str):
-    if method == "aruco":
-        cm_per_px = aruco(image_path)
-    elif method == "green_mat":
-        cm_per_px = green_mat(image_path)
-    else:
-        print("Metode kalibrasi tidak dikenali.")
-        return 1
+@app.post("/calibrate/green_mat")
+async def calibrate(image: UploadFile = File(...)):
+    try:
+        image.filename = "green_mat.png"
+        file_path = os.path.join(calibration, image.filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+        
+        result, file_path = green_mat(file_path)
 
-    if cm_per_px is None:
-        print("Kalibrasi gagal.")
-        return 1
+        if result is None:
+            return JSONResponse(status_code=404, content={"status": "failed", "message": "Calibration Failed."})
+        
+        return {
+            "status": "success",
+            "message": "Calibration Success.",
+            "result": result,
+            "file_path": file_path
+        }
+        
+    except Exception as e:
+        return JSONResponse(content={"message": str(e)}, status_code=500)
 
-    set_config("CM_PER_PX", cm_per_px)
-    print(f"Calibration complete. 1 pixel = {cm_per_px:.4f} cm")
-    return 0
+@app.post("/get_landmark")
+async def obtain_landmark(image: UploadFile = File(...)):
+    try:
+        image.filename = "landmark.jpg"
+        file_path = os.path.join(landmarks, image.filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+        
+        lms = get_landmarks(file_path)
+        result = draw_landmarks(file_path, lms)
 
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--image", required=True, help="Path to RGB image (.jpg/.png)")
-    parser.add_argument("--gender", default="male", choices=["male", "female"], help="Gender of the child")
-    parser.add_argument("--age", default=0, type=int, help="Age of the child in months")
-    parser.add_argument("--method", default="aruco", choices=["aruco", "green_mat"], help="Method for calibration")
-    parser.add_argument("--calibrate", action="store_true", help="Calibrate the model")
-    parser.add_argument("--analyze", action="store_true", help="Analyze the image")
-    args = parser.parse_args()
-
-    # Validasi gambar
-    if not args.image:
-        print("Masukkan path gambar dengan --image path/to/image.jpg")
-        sys.exit(1)
-
-    if args.calibrate:
-        return calibration(args.image, args.method)
-
-    if args.analyze:
-        return analyze(args.image, args.gender, args.age)
-
-    print("Tambahkan flag --analyze atau --calibrate untuk memulai.")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+        if result is None:
+            return JSONResponse(status_code=404, content={"status": "failed", "message": "Can't get landmark."})
+        
+        return {
+            "status": "success",
+            "message": "Landmark Obtained.",
+            "image": result
+        }
+        
+    except Exception as e:
+        return JSONResponse(content={"message": str(e)}, status_code=500)

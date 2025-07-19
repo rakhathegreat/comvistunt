@@ -1,4 +1,4 @@
-import cv2, math, time
+import cv2, math, time, os
 import numpy as np, pandas as pd
 from dataclasses import dataclass
 from typing import Tuple, Optional, Dict
@@ -9,6 +9,7 @@ from config_manager import get_config
 @dataclass
 class Landmark:
     head: Tuple[float, float]
+    nose: Tuple[float, float]
     shoulder: Tuple[float, float]
     hip: Tuple[float, float]
     right_hip: Tuple[float, float]
@@ -17,7 +18,7 @@ class Landmark:
     heel: Tuple[float, float]
 
 # HEIGHT ESTIMATION
-def get_landmark(image: str) -> Optional[Landmark]:
+def get_landmarks(image: str) -> Optional[Landmark]:
     try:
         import mediapipe as mp
     except ImportError:
@@ -31,7 +32,6 @@ def get_landmark(image: str) -> Optional[Landmark]:
         pose = mp_pose.Pose()
 
         img = cv2.imread(image)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         # Deteksi pose
         res = pose.process(img)
@@ -41,6 +41,9 @@ def get_landmark(image: str) -> Optional[Landmark]:
             shape = img.shape
 
             # Landmark penting
+            nose = landmark_to_px(lm[mp_pose.PoseLandmark.NOSE], shape)
+            left_eye = landmark_to_px(lm[mp_pose.PoseLandmark.LEFT_EYE], shape)
+            right_eye = landmark_to_px(lm[mp_pose.PoseLandmark.RIGHT_EYE], shape)
             left_shoulder = landmark_to_px(lm[mp_pose.PoseLandmark.LEFT_SHOULDER], shape)
             right_shoulder = landmark_to_px(lm[mp_pose.PoseLandmark.RIGHT_SHOULDER], shape)
             left_hip = landmark_to_px(lm[mp_pose.PoseLandmark.LEFT_HIP], shape)
@@ -51,12 +54,15 @@ def get_landmark(image: str) -> Optional[Landmark]:
 
             shoulder_px = tuple(np.mean([left_shoulder, right_shoulder], axis=0).astype(int))
             hip_px = tuple(np.mean([left_hip, right_hip], axis=0).astype(int))
+            eyes_px = tuple(np.mean([left_eye, right_eye], axis=0).astype(int))
 
-            vec = np.array(shoulder_px) - np.array(hip_px)
-            head_peak = tuple((np.array(hip_px) + vec * 1.83).astype(int))
+            vec_direction = np.array(eyes_px) - np.array(nose)
+            vec_norm = np.linalg.norm(vec_direction)
+            head_peak = tuple((np.array(nose) + (vec_direction / vec_norm) * abs(shoulder_px[1] - hip_px[1]) / 2).astype(int))
 
             return Landmark(
                 head=head_peak,
+                nose=nose,
                 shoulder=shoulder_px,
                 hip=hip_px,
                 right_hip=right_hip,
@@ -65,20 +71,61 @@ def get_landmark(image: str) -> Optional[Landmark]:
                 heel=heel
             )
 
+def draw_landmarks(image: str, lms: 'Landmark') -> str:
+    try:
+        # Baca gambar
+        img = cv2.imread(image)
+        if img is None:
+            raise FileNotFoundError(f"Gambar tidak ditemukan atau tidak bisa dibaca: {image}")
+
+        # Pastikan semua landmark tidak None
+        if None in [lms.nose, lms.head, lms.hip, lms.right_hip, lms.knee, lms.ankle, lms.heel]:
+            raise ValueError("Beberapa titik landmark belum diatur (None)")
+
+        # Gambar garis
+        cv2.line(img, lms.nose, lms.head, (0, 0, 255), 2)
+        cv2.line(img, lms.nose, lms.hip, (0, 0, 255), 2)
+        cv2.line(img, lms.right_hip, lms.knee, (0, 0, 255), 2)
+        cv2.line(img, lms.knee, lms.ankle, (0, 0, 255), 2)
+        cv2.line(img, lms.ankle, lms.heel, (0, 0, 255), 2)
+
+        # Simpan hasil
+        output_dir = "uploads/landmark/landmark-result"
+        success = cv2.imwrite(os.path.join(output_dir, "draw-landmark.jpg"), img)
+
+        if not success:
+            raise IOError(f"Gagal menyimpan gambar ke: {output_dir}")
+
+        file_path = os.path.join(output_dir, "draw-landmark.jpg")
+
+        return file_path
+
+    except Exception as e:
+        print(f"[ERROR] draw_landmark: {e}")
+        return None
+
+
+    
+    
+
 def get_height(lms: Landmark, ref: float) -> float:
     
-    def pixel_distance(pt1, pt2):
-        return np.linalg.norm(np.array(pt1) - np.array(pt2))
+    def pixel_distance(p1, p2):
+        return np.linalg.norm(np.array(p1) - np.array(p2))
     
     
-    h1 = pixel_distance(lms.hip, lms.head)
-    h2 = pixel_distance(lms.right_hip, lms.knee)
-    h3 = pixel_distance(lms.knee, lms.ankle)
-    h4 = pixel_distance(lms.ankle, lms.heel)
+    d1 = pixel_distance(lms.nose, lms.head)
+    d2 = pixel_distance(lms.nose, lms.hip)
+    d3 = pixel_distance(lms.right_hip, lms.knee)
+    d4 = pixel_distance(lms.knee, lms.ankle)
+    d5 = pixel_distance(lms.ankle, lms.heel)
 
-    return ref * (h1 + h2 + h3 + h4) 
+    return ref * (d1 + d2 + d3 + d4 + d5) 
 
-        
+def get_weight(height:float) -> float:
+    bmi = 22
+    return bmi * (height / 100)**2
+
 # HAZ ESTIMATION
 def get_haz(height: float, gender: str, age: int) -> Tuple[float, str]:
     if gender.lower() == "male":
@@ -100,7 +147,7 @@ def get_haz(height: float, gender: str, age: int) -> Tuple[float, str]:
     else:
         label = "Normal"
 
-    return z, label
+    return label
 
 
 

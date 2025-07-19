@@ -15,13 +15,21 @@ def aruco(image) -> Optional[float]:
         return None
     
     px_size = np.mean([cv2.norm(c[0][0]-c[0][2]) for c in corners])
-    return float((get_config("REF_ARUCO_MM")/10) / px_size)
+
+    cv2.aruco.drawDetectedMarkers(image, corners, ids)
+    file_path = "uploads/calibration/aruco.png"
+    cv2.imwrite(file_path, image)
+
+    return [float((get_config("REF_ARUCO_MM")/10) / px_size), file_path]
 
 def green_mat(image) -> Optional[float]:
     image = cv2.imread(image)
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    lower_green = np.array([35, 40, 40])
-    upper_green = np.array([85, 255, 255])
+    # lower_green = np.array([35, 40, 40])
+    # upper_green = np.array([85, 255, 255])
+
+    lower_green = np.array([75, 100, 100])
+    upper_green = np.array([90, 255, 255])
 
     mask = cv2.inRange(hsv, lower_green, upper_green)
 
@@ -29,12 +37,25 @@ def green_mat(image) -> Optional[float]:
 
     real_length_cm = get_config("REAL_LENGTH_CM")
 
+    # Temukan kontur dengan area terbesar
+    max_contour = None
+    max_area = 0
+
     for contour in contours:
         area = cv2.contourArea(contour)
-        if area > 500:
-            x, y, w, h = cv2.boundingRect(contour)
-            object_length_px = max(w, h)
+        if area > 500 and area > max_area:
+            max_area = area
+            max_contour = contour
+
+    # Jika ada kontur terbesar, proses dia saja
+    if max_contour is not None:
+        x, y, w, h = cv2.boundingRect(max_contour)
+        object_length_px = max(w, h)
+
+        if object_length_px > 0:
+            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 0, 255), 2)
+            file_path = "uploads/calibration/green_mat.png"
+            cv2.imwrite(file_path, image)
             cm_per_px = real_length_cm / object_length_px
 
-            return cm_per_px
-
+            return [cm_per_px, file_path]
