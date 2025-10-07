@@ -1,5 +1,5 @@
-CM_PER_PX: 0.039670241045521
+CM_PER_PX: 0.07486653189048485
+LANDMARK_PATH: uploads/landmark/landmark-result
 POSE_THRESH: 0.999
 REAL_LENGTH_CM: 100
 REF_ARUCO_MM: 108
-LANDMARK_PATH: uploads/landmark/landmark-result

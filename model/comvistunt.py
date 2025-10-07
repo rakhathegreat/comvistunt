@@ -1,4 +1,4 @@
-import cv2, math, time, os
+import cv2, math, time, os, datetime, glob
 import numpy as np, pandas as pd
 from dataclasses import dataclass
 from typing import Tuple, Optional, Dict
@@ -89,25 +89,29 @@ def draw_landmarks(image: str, lms: 'Landmark') -> str:
         cv2.line(img, lms.knee, lms.ankle, (0, 0, 255), 2)
         cv2.line(img, lms.ankle, lms.heel, (0, 0, 255), 2)
 
+        output_dir = "uploads/landmark"
+
+        #hapus file sebelumnya
+        old_files = glob.glob(os.path.join(output_dir, "draw-landmark*.jpg"))
+        for f in old_files:
+            try:
+                os.remove(f)
+            except Exception:
+                pass   # ignore jika file sedang dipakai / tidak ada
+
         # Simpan hasil
-        output_dir = "uploads/landmark/landmark-result"
-        success = cv2.imwrite(os.path.join(output_dir, "draw-landmark.jpg"), img)
+        file = f"draw-landmark.{datetime.datetime.now()}.jpg"
+        success = cv2.imwrite(os.path.join(output_dir, file), img)
 
         if not success:
             raise IOError(f"Gagal menyimpan gambar ke: {output_dir}")
 
-        file_path = os.path.join(output_dir, "draw-landmark.jpg")
-
-        return file_path
+        return file
 
     except Exception as e:
         print(f"[ERROR] draw_landmark: {e}")
         return None
-
-
     
-    
-
 def get_height(lms: Landmark, ref: float) -> float:
     
     def pixel_distance(p1, p2):
@@ -147,7 +151,7 @@ def get_haz(height: float, gender: str, age: int) -> Tuple[float, str]:
     else:
         label = "Normal"
 
-    return label
+    return [z, label]
 
 
 
