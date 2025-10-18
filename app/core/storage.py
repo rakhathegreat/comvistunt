@@ -8,11 +8,11 @@ from typing import Iterable
 from fastapi import UploadFile
 
 
-UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR = Path("capture")
 LANDMARK_DIR = UPLOAD_DIR / "landmark"
 CALIBRATION_DIR = UPLOAD_DIR / "calibration"
-LANDMARK_RESULT_DIR = LANDMARK_DIR / "landmark_result"
-CAPTURE_IMAGE_PATH = UPLOAD_DIR / "image.png"
+CAPTURE_IMAGE_PATH = UPLOAD_DIR / "captured.png"
+RESULT_LANDMARK_PATH = LANDMARK_DIR / "draw-landmark.png"
 ARUCO_IMAGE_PATH = CALIBRATION_DIR / "aruco.png"
 GREEN_MAT_IMAGE_PATH = CALIBRATION_DIR / "green_mat.png"
 
@@ -27,7 +27,6 @@ _ensure_directories(
         UPLOAD_DIR,
         LANDMARK_DIR,
         CALIBRATION_DIR,
-        LANDMARK_RESULT_DIR,
     )
 )
 

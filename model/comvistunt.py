@@ -71,7 +71,7 @@ def get_landmarks(image: str) -> Optional[Landmark]:
                 heel=heel
             )
 
-def draw_landmarks(image: str, lms: 'Landmark') -> str:
+def draw_landmarks(image: str, lms: 'Landmark', dir: str) -> str:
     try:
         # Baca gambar
         img = cv2.imread(image)
@@ -89,18 +89,10 @@ def draw_landmarks(image: str, lms: 'Landmark') -> str:
         cv2.line(img, lms.knee, lms.ankle, (0, 0, 255), 2)
         cv2.line(img, lms.ankle, lms.heel, (0, 0, 255), 2)
 
-        output_dir = "uploads/landmark"
-
-        #hapus file sebelumnya
-        old_files = glob.glob(os.path.join(output_dir, "draw-landmark*.jpg"))
-        for f in old_files:
-            try:
-                os.remove(f)
-            except Exception:
-                pass   # ignore jika file sedang dipakai / tidak ada
+        output_dir = dir
 
         # Simpan hasil
-        file = f"draw-landmark.{datetime.datetime.now()}.jpg"
+        file = f"draw-landmark.png"
         success = cv2.imwrite(os.path.join(output_dir, file), img)
 
         if not success:
