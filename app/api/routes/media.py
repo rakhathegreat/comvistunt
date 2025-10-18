@@ -7,7 +7,7 @@ from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from camera import generate_frames, capture
-from model.comvistunt import draw_landmarks, get_landmarks
+from model.comvistunt import draw_landmarks, get_landmarks, get_height, get_weight, get_haz
 from app.core.storage import CAPTURE_IMAGE_PATH, save_upload_file, LANDMARK_DIR, RESULT_LANDMARK_PATH
 
 router = APIRouter(tags=["Media"])
@@ -21,30 +21,39 @@ def image_to_base64(image_path: str) -> str:
 
 
 @router.post("/capture")
-async def capture_image():
+async def capture_image(gender, age, ref):
     """Capture image and return the annotated landmark result."""
-
-    try:
-        capture()
-        landmarks = str(CAPTURE_IMAGE_PATH)
-        result = draw_landmarks(str(CAPTURE_IMAGE_PATH), landmarks, LANDMARK_DIR)
-
-        return {
-            "status": "success",
-            "message": "Image captured.",
-            "image": result,
-        }
-    except Exception as exc:  # pragma: no cover - defensive coding
-        return JSONResponse(content={"message": str(exc)}, status_code=500)
-
-@router.post("/captureweb")
-async def capture_image():
-    """Persist an uploaded image and return the annotated landmark result."""
 
     try:
         capture()
         landmarks = get_landmarks("image/baby6.jpg")
         result = draw_landmarks("image/baby6.jpg", landmarks, LANDMARK_DIR)
+        height = get_height(landmarks, ref)
+        weight = get_weight(height)
+        status = get_haz(height, gender, age)
+
+        return {
+            "status": "success",
+            "message": "Image captured.",
+            "height": height,
+            "weight": weight,
+            "status": status,
+            "image": base64_image,
+        }
+    except Exception as exc:  # pragma: no cover - defensive coding
+        return JSONResponse(content={"message": str(exc)}, status_code=500)
+
+@router.post("/captureweb")
+async def capture_image(gender, age, ref):
+    """Capture image and return the annotated landmark result."""
+
+    try:
+        capture()
+        landmarks = get_landmarks("image/baby6.jpg")
+        result = draw_landmarks("image/baby6.jpg", landmarks, LANDMARK_DIR)
+        height = get_height(landmarks, ref)
+        weight = get_weight(height)
+        status = get_haz(height, gender, age)
 
         if os.path.exists(RESULT_LANDMARK_PATH):
         # Mengambil gambar dalam base64
@@ -57,6 +66,9 @@ async def capture_image():
         return {
             "status": "success",
             "message": "Image captured.",
+            "height": height,
+            "weight": weight,
+            "status": status,
             "image": base64_image,
         }
     except Exception as exc:  # pragma: no cover - defensive coding
