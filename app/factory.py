@@ -5,7 +5,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .api.routes import api_router
-from .core.errors import register_exception_handlers
 from .core.middleware import CSPMiddleware
 from .core.storage import LANDMARK_DIR
 
@@ -26,7 +25,6 @@ def create_app() -> FastAPI:
 
     app.mount("/static", StaticFiles(directory=str(LANDMARK_DIR)), name="static")
 
-    register_exception_handlers(app)
     app.include_router(api_router)
 
     return app
