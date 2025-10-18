@@ -1,42 +1,40 @@
 """Endpoints performing growth and health analysis."""
 
-from dataclasses import asdict
+from fastapi import APIRouter, Form
+from fastapi.responses import JSONResponse
 
-from fastapi import APIRouter, Form, HTTPException
+from config_manager import get_config
+from model.comvistunt import get_haz, get_height, get_landmarks, get_weight
+from app.core.storage import CAPTURE_IMAGE_PATH
 
-from app.api.schemas import AnalysisResponse, ErrorResponse
-from app.services import NotFoundError, ServiceError, analyze_growth
-
-router = APIRouter(
-    tags=["Analysis"],
-    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
-)
+router = APIRouter(tags=["Analysis"])
 
 
-@router.post("/analyze", response_model=AnalysisResponse)
-async def analyze(gender: str = Form(...), age: int = Form(...)) -> AnalysisResponse:
+@router.post("/analyze")
+async def analyze(gender: str = Form(...), age: int = Form(...)):
     """Calculate height, HAZ, and weight from the captured image."""
 
     try:
-        outcome = analyze_growth(gender, age)
-    except NotFoundError as exc:
-        raise HTTPException(
-            status_code=404,
-            detail={"status": "failed", "message": str(exc)},
-        ) from exc
-    except ServiceError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail={"status": "failed", "message": str(exc)},
-        ) from exc
-    except Exception as exc:  # pragma: no cover - defensive coding
-        raise HTTPException(
-            status_code=500,
-            detail={"status": "failed", "message": str(exc)},
-        ) from exc
+        file_path = CAPTURE_IMAGE_PATH
+        lms = get_landmarks(str(file_path))
+        height = get_height(lms, get_config("CM_PER_PX"))
+        z_score, _ = get_haz(height, gender, age)
+        weight = get_weight(height)
 
-    return AnalysisResponse(
-        status="success",
-        message="Landmark Obtained.",
-        **asdict(outcome),
-    )
+        if height is None or z_score is None or weight is None:
+            return JSONResponse(
+                status_code=404,
+                content={"status": "failed", "message": "Can't analyze."},
+            )
+
+        return {
+            "status": "success",
+            "message": "Landmark Obtained.",
+            "height": height,
+            "haz": z_score,
+            "weight": weight,
+        }
+    except Exception as exc:  # pragma: no cover - defensive coding
+        return JSONResponse(
+            content={"status": "failed", "message": str(exc)}, status_code=500
+        )

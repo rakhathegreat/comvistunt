@@ -1,21 +1,20 @@
 """System level endpoints such as health checks."""
 
 from fastapi import APIRouter
-
-from app.api.schemas import MessageResponse
+from fastapi.responses import JSONResponse
 
 router = APIRouter(tags=["System"])
 
 
-@router.get("/", response_model=MessageResponse)
-async def root() -> MessageResponse:
+@router.get("/")
+async def root():
     """Basic hello world endpoint for smoke testing."""
 
-    return MessageResponse(message="Hello World")
+    return {"message": "Hello World", "status": 200}
 
 
-@router.get("/ping", response_model=MessageResponse)
-async def ping() -> MessageResponse:
+@router.get("/ping")
+async def ping() -> JSONResponse:
     """Return a pong response for uptime monitoring."""
 
-    return MessageResponse(message="pong")
+    return JSONResponse(content={"message": "pong"}, status_code=200)
