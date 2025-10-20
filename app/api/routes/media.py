@@ -10,6 +10,8 @@ from camera import generate_frames, capture
 from model.comvistunt import draw_landmarks, get_landmarks, get_height, get_weight, get_haz
 from app.core.storage import CAPTURE_IMAGE_PATH, save_upload_file, LANDMARK_DIR, RESULT_LANDMARK_PATH
 
+from config_manager import get_config
+
 router = APIRouter(tags=["Media"])
 
 def image_to_base64(image_path: str) -> str:
@@ -21,16 +23,16 @@ def image_to_base64(image_path: str) -> str:
 
 
 @router.post("/capture")
-async def capture_image(gender, age, ref):
+async def capture_image(gender, age):
     """Capture image and return the annotated landmark result."""
 
     try:
         capture()
-        landmarks = get_landmarks("image/baby6.jpg")
-        result = draw_landmarks("image/baby6.jpg", landmarks, LANDMARK_DIR)
-        height = get_height(landmarks, ref)
+        landmarks = get_landmarks(CAPTURE_IMAGE_PATH)
+        result = draw_landmarks(CAPTURE_IMAGE_PATH, landmarks, LANDMARK_DIR)
+        height = get_height(landmarks, get_config('CM_PER_PX'))
         weight = get_weight(height)
-        status = get_haz(height, gender, age)
+        status = get_haz(height, str(gender), int(age))
 
         return {
             "status": "success",
@@ -38,22 +40,25 @@ async def capture_image(gender, age, ref):
             "height": height,
             "weight": weight,
             "status": status,
-            "image": base64_image,
+            "image": result,
         }
     except Exception as exc:  # pragma: no cover - defensive coding
         return JSONResponse(content={"message": str(exc)}, status_code=500)
 
 @router.post("/captureweb")
-async def capture_image(gender, age, ref):
+async def capture_image(gender, age, file: UploadFile = File(...)):
     """Capture image and return the annotated landmark result."""
 
     try:
-        capture()
-        landmarks = get_landmarks("image/baby6.jpg")
-        result = draw_landmarks("image/baby6.jpg", landmarks, LANDMARK_DIR)
-        height = get_height(landmarks, ref)
+        try:
+            await save_upload_file(file, CAPTURE_IMAGE_PATH)
+        except Exception as e:
+            return JSONResponse(status_code=400, content={"message": str(e)})
+        landmarks = get_landmarks(CAPTURE_IMAGE_PATH)
+        result = draw_landmarks(CAPTURE_IMAGE_PATH, landmarks, LANDMARK_DIR)
+        height = get_height(landmarks, get_config('CM_PER_PX'))
         weight = get_weight(height)
-        status = get_haz(height, gender, age)
+        status = get_haz(height, str(gender), int(age))
 
         if os.path.exists(RESULT_LANDMARK_PATH):
         # Mengambil gambar dalam base64
@@ -73,29 +78,6 @@ async def capture_image(gender, age, ref):
         }
     except Exception as exc:  # pragma: no cover - defensive coding
         return JSONResponse(content={"message": str(exc)}, status_code=500)
-
-@router.post("/get_landmark")
-async def get_landmark():
-    """Retrieve landmarks for the latest captured image."""
-
-    try:
-        landmarks = get_landmarks(str(CAPTURE_IMAGE_PATH))
-        result = draw_landmarks(str(CAPTURE_IMAGE_PATH), landmarks)
-
-        if result is None:
-            return JSONResponse(
-                status_code=404,
-                content={"status": "failed", "message": "Can't get landmark."},
-            )
-
-        return {
-            "status": "success",
-            "message": "Landmark Obtained.",
-            "image": result,
-        }
-    except Exception as exc:  # pragma: no cover - defensive coding
-        return JSONResponse(content={"message": str(exc)}, status_code=500)
-
 
 @router.get("/video")
 async def video_stream() -> StreamingResponse:

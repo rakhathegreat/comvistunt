@@ -124,7 +124,7 @@ def get_weight(height:float) -> float:
 
 # HAZ ESTIMATION
 def get_haz(height: float, gender: str, age: int) -> Tuple[float, str]:
-    if gender.lower() == "male":
+    if gender.lower() == "L":
         who_df = pd.read_csv("haz/HAZ_TABLE_BOYS.csv")
     else:
         who_df = pd.read_csv("haz/HAZ_TABLE_GIRLS.csv")
