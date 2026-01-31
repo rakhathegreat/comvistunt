@@ -3,59 +3,51 @@
 import asyncio
 import base64
 import json
-from typing import Any, AsyncGenerator, Dict
+from typing import Any, AsyncGenerator, Dict, Optional, Tuple
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.core.storage import (
-    CAPTURE_IMAGE_PATH,
-    LANDMARK_DIR,
-)
+from app.api.schemas import StuntingRiskRequest, StuntingRiskResponse
 from camera import (
-    capture,
     generate_frames,
     get_latest_measurement,
     enable_stream,
     disable_stream,
 )
-from model.comvistunt import (
-    draw_landmarks,
-    get_landmarks,
-)
+from model.comvistunt import get_haz, get_weight
 
 router = APIRouter(tags=["Media"])
 STREAM_INTERVAL_SECONDS = 0.5  # 2x per detik
 
 
-def image_to_base64(image_path: str) -> str:
-    """Konversi gambar lokal ke base64."""
-    with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode("utf-8")
+def _extract_jpeg_from_mjpeg(chunk: bytes) -> bytes:
+    """Strip MJPEG headers/boundaries and return raw JPEG bytes."""
+    delimiter = b"\r\n\r\n"
+    if delimiter not in chunk:
+        raise ValueError("Invalid MJPEG frame: delimiter not found.")
+    _, body = chunk.split(delimiter, 1)
+    if body.endswith(b"\r\n"):
+        body = body[:-2]
+    return body
 
 
 @router.post("/capture")
 async def capture_image():
-    """Capture image and return the frame as base64."""
+    """Grab a single frame from the video stream and return it as base64."""
     try:
-        capture()
+        enable_stream()
+        gen = generate_frames()
+        try:
+            chunk = next(gen)
+        except StopIteration:
+            raise RuntimeError("Video stream returned no frame.")
+        finally:
+            if hasattr(gen, "close"):
+                gen.close()
 
-        if not CAPTURE_IMAGE_PATH.exists():
-            raise FileNotFoundError("Captured frame was not saved.")
-
-        raw_image_base64 = image_to_base64(str(CAPTURE_IMAGE_PATH))
-        annotated_image_base64 = None
-
-        landmarks = get_landmarks(str(CAPTURE_IMAGE_PATH))
-        if landmarks:
-            result = draw_landmarks(str(CAPTURE_IMAGE_PATH), landmarks, LANDMARK_DIR)
-            annotated_path = LANDMARK_DIR / result if result else None
-            if annotated_path and annotated_path.exists():
-                annotated_image_base64 = image_to_base64(str(annotated_path))
-
-        return {
-            "image": annotated_image_base64 or raw_image_base64,
-        }
+        jpeg_bytes = _extract_jpeg_from_mjpeg(chunk)
+        return {"image": base64.b64encode(jpeg_bytes).decode("utf-8")}
     except Exception as exc:  # pragma: no cover - defensive coding
         return JSONResponse(content={"message": str(exc)}, status_code=500)
 
@@ -161,4 +153,75 @@ def _build_metrics_payload(measurement: Dict[str, Any]):
         "weight": weight,
         "has_landmarks": bool(has_landmarks),
         "updated_at": updated_at,
+    }
+
+
+def _haz_lookup(value: float) -> Tuple[Optional[float], Optional[str]]:
+    """Ambil HAZ (z-score) terdekat menggunakan tabel WHO; aman terhadap error."""
+    try:
+        return get_haz(value, gender="L", age=None)
+    except Exception:
+        return None, None
+
+
+def _height_status_from_haz(
+    haz_label: Optional[str], haz_score: Optional[float]
+) -> str:
+    """Terjemahkan HAZ ke status tinggi."""
+    mapping = {
+        "Severely stunted": "sangat pendek",
+        "Stunted": "pendek",
+        "Normal": "normal",
+        "Tall": "tinggi",
+    }
+    if haz_label in mapping:
+        return mapping[haz_label]
+
+    if haz_score is None:
+        return "normal"
+    if haz_score < -3:
+        return "sangat pendek"
+    if haz_score < -2:
+        return "pendek"
+    if haz_score > 1:
+        return "tinggi"
+    return "normal"
+
+
+def _weight_status_from_haz(haz_score: Optional[float]) -> str:
+    """Kategorikan berat dengan ambang HAZ (tanpa BMI)."""
+    if haz_score is None:
+        return "normal"
+    if haz_score < -3:
+        return "sangat kurus"
+    if haz_score < -2:
+        return "kurus"
+    if haz_score > 1:
+        return "gemuk"
+    return "normal"
+
+
+@router.post("/stunting-risk", response_model=StuntingRiskResponse)
+async def calculate_stunting_risk(height: float, weight: float):
+    """Hitung risiko stunting hanya dari tinggi & berat badan berbasis HAZ."""
+    height_haz, height_label = _haz_lookup(height)
+    weight_haz, _ = _haz_lookup(weight)
+
+    height_status = _height_status_from_haz(height_label, height_haz)
+    weight_status = _weight_status_from_haz(weight_haz)
+
+    stunting_risk = (
+        "berisiko"
+        if height_status in {"sangat pendek", "pendek"}
+        or weight_status in {"sangat kurus", "kurus"}
+        else "tidak berisiko"
+    )
+
+    return {
+        "status": "success",
+        "height_status": height_status,
+        "weight_status": weight_status,
+        "stunting_risk": stunting_risk,
+        "height_haz": height_haz,
+        "weight_haz": weight_haz,
     }
